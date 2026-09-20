@@ -1,0 +1,11 @@
+LangChain
+LangChain-core
+LangChain-community
+pypdf
+pymupdf
+sentence-transformers
+chromadb
+langchain-grop
+python-dotenv   
+hashlib
+streamlit
