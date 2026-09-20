@@ -1,58 +1,40 @@
-# Python-generated files
+# Python cache
 __pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info/
+*.py[cod]
 
 # Virtual environments
 .venv/
 venv/
 env/
 
-# Environment variables / secrets
+# Secrets
 .env
 .env.*
 !.env.example
-
-# Streamlit secrets
 .streamlit/secrets.toml
 
-# Local uploaded documents
-data/uploads/
-*.pdf
+# Local embedding model
+models/
 
-# Chat history / local application data
+# User data
+data/uploads/
 data/chat_history.json
 
-# ChromaDB / Vector Database
-chroma/
-chroma_db/
-data/chroma/
-*.sqlite3
+# Generated ChromaDB database
+data/vector_store/
 
-# Local ML / embedding models
-models/
-*.bin
-*.safetensors
-*.pt
-*.pth
+# Optional local document collection
+# Uncomment if you don't want this on GitHub:
+# data/cs229-notes-all/
 
 # Jupyter
 .ipynb_checkpoints/
 
-# VS Code / IDE
+# IDE
 .vscode/
 .idea/
 
 # Logs
 *.log
 
-# Temporary files
-*.tmp
-*.temp
-
-# OS files
-.DS_Store
-Thumbs.db
+data/cs229-notes-all/
