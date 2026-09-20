@@ -351,18 +351,6 @@ If the project includes a model download script, run it and confirm the model fi
 
 ---
 
-## 🛣️ Future Improvements
-
-- [ ] Complete team testing and bug fixes
-- [ ] Improve retrieval accuracy
-- [ ] Improve error handling and document processing
-- [ ] Add support for more document formats
-- [ ] Optimize performance
-- [ ] Prepare and validate deployment
-- [ ] Add a live demo after deployment
-
----
-
 ## 👨‍💻 Contributors
 
 **Shrirang Ambure** — Project Developer
@@ -370,12 +358,6 @@ If the project includes a model download script, run it and confirm the model fi
 GitHub: [@Shrirang45](https://github.com/Shrirang45)
 
 Repository: [DocuMind-AI](https://github.com/Shrirang45/DocuMind-AI)
-
----
-
-## 📄 License
-
-No license has been specified yet. Please contact the project owner before reusing or redistributing this project.
 
 ---
 
