@@ -149,7 +149,8 @@ class VectorStore:
             #get or create collection
             self.collection=self.client.get_or_create_collection(
                 name=self.collection_name,
-                metadata={"description" : "PDF document embeddings for RAG"}
+                metadata={"description" : "PDF document embeddings for RAG",
+                          "hnsw:space": "cosine"}
             )
             print(f"vector store initialized. Collection: {self.collection_name}")
             print(f"Existing documents in collection: {self.collection.count()}")

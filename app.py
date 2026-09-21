@@ -117,14 +117,29 @@ def get_documents():
     return [os.path.join(DATA_DIR, f) for f in os.listdir(DATA_DIR) if f.lower().endswith(".pdf")]
 
 
-def duplicate_file(data):
-    h = file_hash(data)
+def duplicate_file(data, filename):
+    """
+    Return the name of an identical PDF already stored under a DIFFERENT
+    filename. A same-name file is allowed so the user can re-upload/replace it.
+    """
+    uploaded_hash = file_hash(data)
+
     for p in get_documents():
+        # Allow re-uploading/replacing a file with the same name.
+        if os.path.basename(p).casefold() == filename.casefold():
+            continue
+
         try:
-            if hashlib.sha256(open(p, "rb").read()).hexdigest() == h:
+            with open(p, "rb") as existing_file:
+                existing_hash = hashlib.sha256(existing_file.read()).hexdigest()
+
+            # Prevent the same PDF from being stored under another filename.
+            if existing_hash == uploaded_hash:
                 return os.path.basename(p)
-        except Exception:
-            pass
+
+        except Exception as e:
+            print(f"Duplicate check error for {p}: {e}")
+
     return None
 
 
@@ -138,7 +153,12 @@ def get_backend():
 
 
 def ask_question(query, top_k, score_threshold):
-    """Run RAG using settings captured on the main Streamlit thread."""
+    """Run RAG with strict document grounding.
+
+    IMPORTANT: Do not fall back to min_score=0.0. That would force the
+    vector store to return unrelated chunks for questions that are not
+    covered by the uploaded documents.
+    """
     retriever = get_backend()
     result = rag(
         query, retriever, llm,
@@ -147,16 +167,15 @@ def ask_question(query, top_k, score_threshold):
         return_context=True,
     )
 
-    # Retry without threshold filtering if the first retrieval found no sources.
+    # If retrieval found nothing above the relevance threshold, never let
+    # the LLM answer from its general knowledge and never show unrelated
+    # document sources.
     if not result.get("sources"):
-        relaxed = rag(
-            query, retriever, llm,
-            top_k=top_k,
-            min_score=0.0,
-            return_context=True,
-        )
-        if relaxed.get("sources"):
-            return relaxed
+        return {
+            "answer": "I couldn't find this information in the uploaded document(s).",
+            "sources": [],
+        }
+
     return result
 
 
@@ -257,7 +276,7 @@ def confirm_delete(flag_key, label, on_confirm):
 defaults = {
     "chats": None, "active_chat": None, "page": "Chat", "top_k": 3, "score_threshold": 0.2,
     "confirm_delete_chat": None, "confirm_delete_doc": None, "pending_question": None,
-    "confirm_clear_history": False, "pending_jobs": {},
+    "confirm_clear_history": False, "pending_jobs": {}, "upload_reset": 0,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -359,28 +378,47 @@ if st.session_state.page == "Chat":
         if not docs:
             st.info("No documents indexed yet. Switch to **📄 Documents** to upload your first PDF.")
         else:
-            suggestions = [
-                "Summarize this document in a few bullet points",
-                "What are the key takeaways?",
-                "List any important dates or numbers mentioned",
-            ]
-            for col, s in zip(st.columns(len(suggestions)), suggestions):
-                with col:
-                    if st.button(s, use_container_width=True, key=f"sugg_{s}"):
-                        st.session_state.pending_question = s
-    # Render all saved messages, including answers completed after navigation.
-    for m in chat["messages"]:
-        with st.chat_message(m["role"]):
-            st.markdown(m["content"])
-            if m["role"] == "assistant" and m.get("sources"):
-                with st.expander(f"📚 {len(m['sources'])} source(s) used"):
-                    st.markdown(chips_html(m["sources"]), unsafe_allow_html=True)
+            st.markdown(
+                """
+                <div style="text-align:center; margin: 24px 0 12px;">
+                    <h3>💬 What would you like to know?</h3>
+                    <p style="color:#94A3B8; font-size:15px;">
+                        Ask anything about your documents — DocuMind AI is ready to help.
+                    </p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+    # Poll the background task and refresh only the chat area automatically.
+    # This prevents completed answers from waiting for a manual page/navigation rerun.
+    @st.fragment(run_every="1s")
+    def render_chat_updates(chat_id):
+        # Remember whether this chat had a background job before harvesting.
+        # Once it is harvested, rerun the FULL app so st.chat_input is rebuilt
+        # with disabled=False (fragment-only refreshes cannot update that widget).
+        had_pending_job = chat_id in st.session_state.pending_jobs
+        harvest_completed_jobs()
+        if had_pending_job and chat_id not in st.session_state.pending_jobs:
+            st.rerun(scope="app")
 
-    # Keep a simple loading message visible while the background RAG task runs.
-    # Unlike the old warning, this does not show navigation instructions or a
-    # "Check response" button.
-    if is_chat_pending(chat["id"]):
-        st.info("⏳ Reading your documents and generating your answer...")
+        current_chat = next(
+            (c for c in st.session_state.chats if c.get("id") == chat_id),
+            None,
+        )
+        if current_chat is None:
+            return
+
+        for m in current_chat["messages"]:
+            with st.chat_message(m["role"]):
+                st.markdown(m["content"])
+                if m["role"] == "assistant" and m.get("sources"):
+                    with st.expander(f"📚 {len(m['sources'])} source(s) used"):
+                        st.markdown(chips_html(m["sources"]), unsafe_allow_html=True)
+
+        if is_chat_pending(chat_id):
+            st.info("⏳ Reading your documents and generating your answer...")
+
+    render_chat_updates(chat["id"])
 
     user_input = st.chat_input(
         "Ask something about your documents...",
@@ -416,13 +454,18 @@ elif st.session_state.page == "Documents":
     st.write("")
     st.markdown('<div class="dm-glass">', unsafe_allow_html=True)
     st.markdown("**Upload PDFs**")
-    uploaded_files = st.file_uploader("Drag & drop or browse", type=["pdf"],
-                                       accept_multiple_files=True, label_visibility="collapsed")
+    uploaded_files = st.file_uploader(
+        "Drag & drop or browse",
+        type=["pdf"],
+        accept_multiple_files=True,
+        label_visibility="collapsed",
+        key=f"pdf_uploader_{st.session_state.get('upload_reset', 0)}",
+    )
     new_files = []
     if uploaded_files:
         for f in uploaded_files:
             data = f.getvalue()
-            dup = duplicate_file(data)
+            dup = duplicate_file(data, f.name)
             if dup:
                 st.warning(f"⚠️ **{f.name}** already exists as `{dup}` — skipped.")
             else:
@@ -463,10 +506,37 @@ elif st.session_state.page == "Documents":
 
         if st.session_state.confirm_delete_doc == path:
             def do_delete(p=path):
-                os.remove(p)
-                with st.spinner("Updating knowledge base..."):
-                    ingest_documents(DATA_DIR)
-                get_backend.clear()
+                filename_to_delete = os.path.basename(p)
+                actual_path = os.path.abspath(p)
+
+                try:
+                    # Remove the PDF from the active uploads directory.
+                    if os.path.isfile(actual_path):
+                        os.remove(actual_path)
+
+                    # Do not report success unless the file is actually gone.
+                    if os.path.exists(actual_path):
+                        st.error(f"Could not delete {filename_to_delete}: file still exists.")
+                        return
+
+                    # Rebuild/update the knowledge base from remaining PDFs.
+                    with st.spinner("Updating knowledge base..."):
+                        ingest_documents(DATA_DIR)
+
+                    get_backend.clear()
+
+                    # Clear any previously selected files in Streamlit's uploader.
+                    st.session_state.upload_reset = (
+                        st.session_state.get("upload_reset", 0) + 1
+                    )
+                    st.session_state.confirm_delete_doc = None
+
+                    st.success(f"{filename_to_delete} deleted successfully!")
+
+                except Exception as e:
+                    st.error(f"Delete failed for {filename_to_delete}: {e}")
+                    print(f"DELETE ERROR for {actual_path}: {e}")
+
             confirm_delete("confirm_delete_doc", filename, do_delete)
 
 

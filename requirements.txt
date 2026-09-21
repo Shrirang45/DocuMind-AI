@@ -5,7 +5,7 @@ pypdf
 pymupdf
 sentence-transformers
 chromadb
-langchain-grop
+langchain-groq
 python-dotenv   
 hashlib
 streamlit
