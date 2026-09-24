@@ -46,7 +46,10 @@ def process_all_pdf(pdf_directory):
                 doc.metadata['source_file']=pdf_file.name
                 doc.metadata['file_type']='pdf'
                 doc.metadata['file_hash'] = file_hash
-
+                # Convert PyPDFLoader's 0-based page number
+                # to a normal 1-based PDF page number
+                if "page" in doc.metadata:
+                    doc.metadata["page"] = int(doc.metadata["page"]) + 1
             all_documents.extend(documents)
             print(f' Loaded {len(documents)} pages')
         except Exception as e:
