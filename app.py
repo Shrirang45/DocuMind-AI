@@ -12,9 +12,7 @@ os.makedirs("./data", exist_ok=True)
 
 st.set_page_config(page_title="DocuMind AI", page_icon="✦", layout="wide")
 
-# ============================================================
 # Dark, glass-panel theme
-# ============================================================
 st.markdown("""
 <style>
 #MainMenu, footer, header {visibility: hidden;}
@@ -119,23 +117,28 @@ def get_documents():
 
 def duplicate_file(data, filename):
     """
-    Return the name of an identical PDF already stored under a DIFFERENT
-    filename. A same-name file is allowed so the user can re-upload/replace it.
+    Check whether the uploaded PDF already exists.
+
+    Rules:
+    1. Same filename + same content -> duplicate, skip.
+    2. Different filename + same content -> duplicate, skip.
+    3. Same filename + different content -> allow replacement.
+    4. Different filename + different content -> allow upload.
     """
     uploaded_hash = file_hash(data)
 
     for p in get_documents():
-        # Allow re-uploading/replacing a file with the same name.
-        if os.path.basename(p).casefold() == filename.casefold():
-            continue
-
         try:
             with open(p, "rb") as existing_file:
-                existing_hash = hashlib.sha256(existing_file.read()).hexdigest()
+                existing_hash = hashlib.sha256(
+                    existing_file.read()
+                ).hexdigest()
 
-            # Prevent the same PDF from being stored under another filename.
+            existing_filename = os.path.basename(p)
+
+            # Same content = duplicate, regardless of filename.
             if existing_hash == uploaded_hash:
-                return os.path.basename(p)
+                return existing_filename
 
         except Exception as e:
             print(f"Duplicate check error for {p}: {e}")
@@ -153,30 +156,17 @@ def get_backend():
 
 
 def ask_question(query, top_k, score_threshold):
-    """Run RAG with strict document grounding.
-
-    IMPORTANT: Do not fall back to min_score=0.0. That would force the
-    vector store to return unrelated chunks for questions that are not
-    covered by the uploaded documents.
-    """
+    """Run the RAG chain."""
     retriever = get_backend()
-    result = rag(
-        query, retriever, llm,
+
+    return rag(
+        query,
+        retriever,
+        llm,
         top_k=top_k,
         min_score=score_threshold,
         return_context=True,
     )
-
-    # If retrieval found nothing above the relevance threshold, never let
-    # the LLM answer from its general knowledge and never show unrelated
-    # document sources.
-    if not result.get("sources"):
-        return {
-            "answer": "I couldn't find this information in the uploaded document(s).",
-            "sources": [],
-        }
-
-    return result
 
 
 @st.cache_resource
@@ -269,10 +259,7 @@ def confirm_delete(flag_key, label, on_confirm):
             st.session_state[flag_key] = None
             st.rerun()
 
-
-# ============================================================
 # Session state
-# ============================================================
 defaults = {
     "chats": None, "active_chat": None, "page": "Chat", "top_k": 3, "score_threshold": 0.2,
     "confirm_delete_chat": None, "confirm_delete_doc": None, "pending_question": None,
@@ -292,10 +279,7 @@ if not isinstance(st.session_state.pending_jobs, dict):
     st.session_state.pending_jobs = {}
 harvest_completed_jobs()
 
-
-# ============================================================
 # Sidebar — chat history only
-# ============================================================
 with st.sidebar:
     st.markdown(
         '<div class="dm-logo"><span class="dm-logo-mark">✦</span>'
@@ -337,9 +321,7 @@ with st.sidebar:
     st.caption(f"{len(get_documents())} document(s) · {len(st.session_state.chats)} chat(s)")
 
 
-# ============================================================
 # Top nav (tabs replace the old sidebar page-switcher)
-# ============================================================
 top_l, top_r = st.columns([3, 2])
 with top_l:
     st.markdown(
@@ -436,9 +418,7 @@ if st.session_state.page == "Chat":
         st.rerun()
 
 
-# ============================================================
 # DOCUMENTS
-# ============================================================
 elif st.session_state.page == "Documents":
     documents = sorted(get_documents())
     total_kb = sum(os.path.getsize(p) for p in documents) / 1024
@@ -539,10 +519,7 @@ elif st.session_state.page == "Documents":
 
             confirm_delete("confirm_delete_doc", filename, do_delete)
 
-
-# ============================================================
 # SETTINGS
-# ============================================================
 elif st.session_state.page == "Settings":
     st.markdown('<div class="dm-glass">', unsafe_allow_html=True)
     st.markdown("**🔍 Retrieval**")
