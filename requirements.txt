@@ -9,4 +9,4 @@ langchain-text-splitters
 langchain-ollama
 pypdf
 pymupdf
-python-dotenv
+python-dotenvlangchain-mistralai

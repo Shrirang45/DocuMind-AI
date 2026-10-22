@@ -3,7 +3,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import streamlit as st
 from src.data_ingestion import ingest_documents, EmbeddingsManager, VectorStore
-from src.rag import RAGRetriever, rag, llm
+from src.rag import RAGRetriever, rag, llm, DOCUMIND_MODE
+
+IS_CLOUD_MODE = DOCUMIND_MODE == "cloud"
 
 DATA_DIR = "./data/uploads"
 HISTORY_FILE = "./data/chat_history.json"
@@ -283,7 +285,7 @@ with st.sidebar:
         '<div class="dm-logo"><span class="dm-logo-mark">✦</span>'
         '<div><div class="dm-logo-text">DocuMind</div>'
         '<div class="dm-logo-sub">AI Document Q&amp;A</div></div></div>'
-        '<div style="margin-top:8px;"><span class="dm-pill">🔒 Offline &amp; Private</span></div>'
+        f'<div style="margin-top:8px;"><span class="dm-pill">{'☁️ Cloud demo' if IS_CLOUD_MODE else '🔒 Offline &amp; Private'}</span></div>'
         '<hr class="dm-hr">',
         unsafe_allow_html=True,
     )
@@ -325,7 +327,7 @@ with top_l:
     st.markdown(
         '<div class="dm-logo"><span class="dm-logo-mark" style="font-size:2rem;">✦</span>'
         '<div><div class="dm-logo-text" style="font-size:1.5rem;">DocuMind AI</div>'
-        '<div class="dm-logo-sub">Local RAG assistant, zero cloud calls</div></div></div>',
+        f'<div class="dm-logo-sub">{'Mistral API demo' if IS_CLOUD_MODE else 'Local RAG assistant, zero cloud calls'}</div></div></div>',
         unsafe_allow_html=True,
     )
 with top_r:
@@ -352,7 +354,7 @@ if st.session_state.page == "Chat":
         docs = get_documents()
         st.markdown(
             '<div class="dm-hero"><div class="mark">✦</div><h1>Ask anything about your files</h1>'
-            '<p>Everything runs locally — your documents never leave this machine.</p></div>',
+            f'<p>{'This public demo sends your question and retrieved document excerpts to the Mistral API for answer generation.' if IS_CLOUD_MODE else 'Everything runs locally — your documents never leave this machine.'}</p></div>',
             unsafe_allow_html=True,
         )
         if not docs:
@@ -541,13 +543,13 @@ elif st.session_state.page == "Settings":
     st.write("")
     s1, s2 = st.columns(2)
     s1.markdown(
-        '<div class="dm-glass"><b>🧠 LLM</b><br>Mistral via Ollama<br><br>'
+        f'<div class="dm-glass"><b>🧠 LLM</b><br>{"Mistral API" if IS_CLOUD_MODE else "Mistral via Ollama"}<br><br>'
         '<b>🧬 Embedding model</b><br>all-MiniLM-L6-v2<br><br>'
         '<b>🗂️ Vector database</b><br>ChromaDB</div>', unsafe_allow_html=True)
     s2.markdown(
         '<div class="dm-glass"><b>🖥️ Frontend</b><br>Streamlit<br><br>'
-        '<b>🌐 Operation mode</b><br>Online / Local &amp; Offline<br><br>'
-        '<b>🔒 Privacy</b><br>No data leaves your machine</div>', unsafe_allow_html=True)
+        f'<b>🌐 Operation mode</b><br>{"Cloud demo" if IS_CLOUD_MODE else "Local &amp; Offline"}<br><br>'
+        f'<b>🔒 Privacy</b><br>{"Questions and retrieved excerpts are sent to Mistral API" if IS_CLOUD_MODE else "No data leaves your machine"}</div>', unsafe_allow_html=True)
 
     st.write("")
     st.markdown('<div class="dm-glass">', unsafe_allow_html=True)
