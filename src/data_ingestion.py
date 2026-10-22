@@ -279,14 +279,21 @@ def ingest_documents(pdf_directory):
     pdf_files = list(pdf_dir.glob("*.pdf"))
     print(f"Found {len(pdf_files)} PDF files")
 
-    current_files = {pdf_file.name for pdf_file in pdf_files}
+    # Compare filenames case-insensitively on Windows and other platforms.
+    current_by_key = {pdf_file.name.casefold(): pdf_file.name for pdf_file in pdf_files}
     stored_files = vectorstore.get_stored_source_files()
+    stored_by_key = {name.casefold(): name for name in stored_files}
 
-    # Remove ChromaDB chunks for documents deleted from uploads
-    deleted_files = stored_files - current_files
-    for source_file in deleted_files:
+    # Remove ChromaDB chunks for files no longer present in uploads.
+    deleted_keys = set(stored_by_key) - set(current_by_key)
+    for key in deleted_keys:
+        source_file = stored_by_key[key]
         print(f"Document deleted by user: {source_file}")
         vectorstore.delete_document(source_file)
+
+    # Use the current on-disk spelling as the canonical filename.
+    stored_files = vectorstore.get_stored_source_files()
+    stored_by_key = {name.casefold(): name for name in stored_files}
 
     new_pdf_files = []
 
@@ -294,13 +301,18 @@ def ingest_documents(pdf_directory):
     for pdf_file in pdf_files:
         file_hash = get_file_hash(pdf_file)
 
-        if vectorstore.is_document_indexed(pdf_file.name, file_hash):
+        stored_name = stored_by_key.get(pdf_file.name.casefold())
+
+        # If the file's case changed, check the stored canonical name too.
+        indexed_name = stored_name or pdf_file.name
+        if vectorstore.is_document_indexed(indexed_name, file_hash):
             print(f"Skipping unchanged document: {pdf_file.name}")
         else:
             print(f"New or modified document: {pdf_file.name}")
 
-            if pdf_file.name in stored_files:
-                vectorstore.delete_document(pdf_file.name)
+            # Delete old chunks using the exact stored metadata filename.
+            if stored_name:
+                vectorstore.delete_document(stored_name)
 
             new_pdf_files.append(pdf_file)
 
@@ -325,6 +337,11 @@ def ingest_documents(pdf_directory):
                 doc.metadata["source_file"] = pdf_file.name
                 doc.metadata["file_type"] = "pdf"
                 doc.metadata["file_hash"] = file_hash
+
+                # PyPDFLoader uses zero-based page indexes. Store human page numbers.
+                if "page" in doc.metadata:
+                    doc.metadata["page"] = int(doc.metadata["page"]) + 1
+                    doc.metadata["page_number"] = doc.metadata["page"]
 
             documents.extend(pdf_documents)
             print(f"Loaded {len(pdf_documents)} pages")

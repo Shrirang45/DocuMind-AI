@@ -116,32 +116,29 @@ def get_documents():
 
 
 def duplicate_file(data, filename):
-    """
-    Check whether the uploaded PDF already exists.
+    """Return an existing filename only when the uploaded bytes are identical.
 
-    Rules:
-    1. Same filename + same content -> duplicate, skip.
-    2. Different filename + same content -> duplicate, skip.
-    3. Same filename + different content -> allow replacement.
-    4. Different filename + different content -> allow upload.
+    Filename comparison is case-insensitive. A modified file with the same
+    filename is allowed through so the ingestion layer can re-index it.
     """
     uploaded_hash = file_hash(data)
+    target_name = filename.casefold()
 
-    for p in get_documents():
+    for path in get_documents():
+        existing_name = os.path.basename(path)
         try:
-            with open(p, "rb") as existing_file:
-                existing_hash = hashlib.sha256(
-                    existing_file.read()
-                ).hexdigest()
+            with open(path, "rb") as existing_file:
+                existing_hash = hashlib.sha256(existing_file.read()).hexdigest()
 
-            existing_filename = os.path.basename(p)
-
-            # Same content = duplicate, regardless of filename.
+            # Identical content is a duplicate even if its filename differs.
             if existing_hash == uploaded_hash:
-                return existing_filename
+                return existing_name
 
+            # Same name but different bytes is a modification, not a duplicate.
+            if existing_name.casefold() == target_name:
+                continue
         except Exception as e:
-            print(f"Duplicate check error for {p}: {e}")
+            print(f"Duplicate check error for {path}: {e}")
 
     return None
 
@@ -264,6 +261,7 @@ defaults = {
     "chats": None, "active_chat": None, "page": "Chat", "top_k": 3, "score_threshold": 0.2,
     "confirm_delete_chat": None, "confirm_delete_doc": None, "pending_question": None,
     "confirm_clear_history": False, "pending_jobs": {}, "upload_reset": 0,
+    "upload_status": None,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -434,6 +432,10 @@ elif st.session_state.page == "Documents":
     st.write("")
     st.markdown('<div class="dm-glass">', unsafe_allow_html=True)
     st.markdown("**Upload PDFs**")
+    # Keep the completed upload message visible after the rerun refreshes the page.
+    if st.session_state.get("upload_status"):
+        st.success(st.session_state.upload_status)
+        st.session_state.upload_status = None
     uploaded_files = st.file_uploader(
         "Drag & drop or browse",
         type=["pdf"],
@@ -447,19 +449,22 @@ elif st.session_state.page == "Documents":
             data = f.getvalue()
             dup = duplicate_file(data, f.name)
             if dup:
-                st.warning(f"⚠️ **{f.name}** already exists as `{dup}` — skipped.")
+                st.info(f"📄 **{f.name}** is already in your library as `{dup}`. It was not uploaded again because the file content is identical.")
             else:
                 new_files.append(f)
                 st.success(f"✅ **{f.name}** ready ({len(data)/1024:.1f} KB)")
 
         if new_files and st.button("⚙️ Process Documents", use_container_width=True, type="primary"):
             for f in new_files:
-                open(os.path.join(DATA_DIR, f.name), "wb").write(f.getbuffer())
+                destination = os.path.join(DATA_DIR, f.name)
+                with open(destination, "wb") as output_file:
+                    output_file.write(f.getvalue())
             with st.spinner("Extracting, chunking and creating embeddings..."):
                 try:
                     ingest_documents(DATA_DIR)
                     get_backend.clear()
-                    st.success("✅ Documents processed successfully.")
+                    st.session_state.upload_status = f"✅ {len(new_files)} document(s) uploaded and processed successfully."
+                    st.session_state.upload_reset = st.session_state.get("upload_reset", 0) + 1
                     st.rerun()
                 except Exception as e:
                     st.error(f"Processing error: {e}")
