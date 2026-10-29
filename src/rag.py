@@ -141,7 +141,7 @@ if DOCUMIND_MODE == "cloud":
             "or your environment. For offline use, leave DOCUMIND_MODE unset or set it to 'local'."
         )
     llm = ChatGroq(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
         api_key=_api_key,
         temperature=0.2,
         max_tokens=512,
