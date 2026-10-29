@@ -105,7 +105,7 @@ class RAGRetriever:
 
 # MODEL CONFIGURATION
 # Local/offline is the safe default. Set DOCUMIND_MODE=cloud only for the
-# Streamlit-hosted demo, where generation uses the Mistral API.
+# Streamlit-hosted demo, where generation uses the Groq API.
 def _get_setting(name: str, default: str = "") -> str:
     value = os.getenv(name)
     if value:
@@ -121,28 +121,28 @@ DOCUMIND_MODE = _get_setting("DOCUMIND_MODE", "local").strip().lower()
 if DOCUMIND_MODE not in {"local", "cloud"}:
     raise ValueError("DOCUMIND_MODE must be either 'local' or 'cloud'.")
 
-def _get_mistral_api_key():
-    key = os.getenv("MISTRAL_API_KEY")
+def _get_groq_api_key():
+    key = os.getenv("GROQ_API_KEY")
     if key:
         return key
     # Streamlit Cloud secrets are available through st.secrets. Import lazily
     # so running the local RAG module does not require Streamlit secrets.
     try:
         import streamlit as st
-        return st.secrets.get("MISTRAL_API_KEY", "")
+        return st.secrets.get("GROQ_API_KEY", "")
     except Exception:
         return ""
 
 if DOCUMIND_MODE == "cloud":
-    from langchain_mistralai import ChatMistralAI
-    _api_key = _get_mistral_api_key()
+    from langchain_groq import ChatGroq
+    _api_key = _get_groq_api_key()
     if not _api_key:
         raise RuntimeError(
-            "Cloud mode needs MISTRAL_API_KEY. Add it to Streamlit Cloud Secrets "
+            "Cloud mode needs GROQ_API_KEY. Add it to Streamlit Cloud Secrets "
             "or your environment. For offline use, leave DOCUMIND_MODE unset or set it to 'local'."
         )
-    llm = ChatMistralAI(
-        model="mistral-small-latest",
+    llm = ChatGroq(
+        model="llama-3.3-70b-versatile",
         api_key=_api_key,
         temperature=0.2,
         max_tokens=512,

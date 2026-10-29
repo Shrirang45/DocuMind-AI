@@ -10,4 +10,4 @@ langchain-ollama
 pypdf
 pymupdf
 python-dotenv
-langchain-mistralai
+langchain-groq

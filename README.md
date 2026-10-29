@@ -364,3 +364,11 @@ Repository: [DocuMind-AI](https://github.com/Shrirang45/DocuMind-AI)
 <p align="center">
   ⭐ If you find this project interesting, consider starring the repository!
 </p>
+
+## Local offline mode and public cloud demo
+
+DocuMind supports two configurations. The default is `local`, which uses Ollama with the locally installed `mistral` model. After the required models and Python dependencies are installed, this mode can run without internet.
+
+For a separate Streamlit Community Cloud deployment, set the Streamlit secret `DOCUMIND_MODE = "cloud"` and `GROQ_API_KEY = "your-key"`. Cloud mode uses the Groq API and requires internet access. Create a key in the Groq console and check the current free-tier limits before sharing the app. Never commit API keys or `.streamlit/secrets.toml` to GitHub.
+
+Deploy from Streamlit Community Cloud with repository `Shrirang45/DocuMind-AI`, branch `main`, and entrypoint `app.py`. Configure the two secrets above in the app's Advanced settings. Do not deploy the cloud branch/version as a private-document service without first implementing and testing per-user isolation for uploaded PDFs, Chroma indexes, and chat history. Cloud-hosted files may be temporary and should not be treated as durable storage.

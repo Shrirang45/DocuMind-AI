@@ -327,7 +327,7 @@ with top_l:
     st.markdown(
         '<div class="dm-logo"><span class="dm-logo-mark" style="font-size:2rem;">✦</span>'
         '<div><div class="dm-logo-text" style="font-size:1.5rem;">DocuMind AI</div>'
-        f'<div class="dm-logo-sub">{'Mistral API demo' if IS_CLOUD_MODE else 'Local RAG assistant, zero cloud calls'}</div></div></div>',
+        f'<div class="dm-logo-sub">{'Groq API demo' if IS_CLOUD_MODE else 'Local RAG assistant, zero cloud calls'}</div></div></div>',
         unsafe_allow_html=True,
     )
 with top_r:
@@ -354,7 +354,7 @@ if st.session_state.page == "Chat":
         docs = get_documents()
         st.markdown(
             '<div class="dm-hero"><div class="mark">✦</div><h1>Ask anything about your files</h1>'
-            f'<p>{'This public demo sends your question and retrieved document excerpts to the Mistral API for answer generation.' if IS_CLOUD_MODE else 'Everything runs locally — your documents never leave this machine.'}</p></div>',
+            f'<p>{'This public demo sends your question and retrieved document excerpts to Groq for answer generation. Do not upload sensitive documents.' if IS_CLOUD_MODE else 'Everything runs locally — your documents never leave this machine.'}</p></div>',
             unsafe_allow_html=True,
         )
         if not docs:
