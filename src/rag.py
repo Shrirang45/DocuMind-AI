@@ -1,7 +1,6 @@
 from typing import List, Dict, Any
 import os
 
-from langchain_ollama import OllamaLLM, ChatOllama
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.tools import tool
@@ -124,12 +123,12 @@ if DOCUMIND_MODE not in {"local", "cloud"}:
 def _get_groq_api_key():
     key = os.getenv("GROQ_API_KEY")
     if key:
-        return key
+        return key.strip()
     # Streamlit Cloud secrets are available through st.secrets. Import lazily
     # so running the local RAG module does not require Streamlit secrets.
     try:
         import streamlit as st
-        return st.secrets.get("GROQ_API_KEY", "")
+        return str(st.secrets.get("GROQ_API_KEY", "")).strip()
     except Exception:
         return ""
 
@@ -149,6 +148,10 @@ if DOCUMIND_MODE == "cloud":
     )
     agent_llm = llm
 else:
+    # Import Ollama only in local mode. Streamlit Cloud does not provide
+    # an Ollama server, so this import must not run in cloud mode.
+    from langchain_ollama import OllamaLLM, ChatOllama
+
     llm = OllamaLLM(
         model="mistral",
         temperature=0.2,
