@@ -1,6 +1,7 @@
 from typing import List, Dict, Any
 import os
 
+from langchain_ollama import OllamaLLM, ChatOllama
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.tools import tool
@@ -123,12 +124,12 @@ if DOCUMIND_MODE not in {"local", "cloud"}:
 def _get_groq_api_key():
     key = os.getenv("GROQ_API_KEY")
     if key:
-        return key.strip()
+        return key
     # Streamlit Cloud secrets are available through st.secrets. Import lazily
     # so running the local RAG module does not require Streamlit secrets.
     try:
         import streamlit as st
-        return str(st.secrets.get("GROQ_API_KEY", "")).strip()
+        return st.secrets.get("GROQ_API_KEY", "")
     except Exception:
         return ""
 
@@ -148,10 +149,6 @@ if DOCUMIND_MODE == "cloud":
     )
     agent_llm = llm
 else:
-    # Import Ollama only in local mode. Streamlit Cloud does not provide
-    # an Ollama server, so this import must not run in cloud mode.
-    from langchain_ollama import OllamaLLM, ChatOllama
-
     llm = OllamaLLM(
         model="mistral",
         temperature=0.2,
@@ -323,6 +320,21 @@ STRICT RULES:
 
 12. If the evidence contains a relevant fact,
     answer directly using that fact.
+
+13. MATHEMATICAL FORMATTING:
+    - Use $...$ for inline mathematical expressions.
+    - Use $$...$$ for equations displayed on separate lines.
+    - Put matrices and multi-line equations inside $$...$$.
+    - Use valid LaTeX commands inside the math delimiters.
+    - Never show raw LaTeX commands as ordinary prose.
+    - Ensure each math delimiter is properly closed.
+    - Do not wrap equations in square brackets as delimiters.
+    - Explain equations in plain language before or after them.
+
+13. For example, format a linear equation like this:
+    $$z = Wx + b$$
+    For a display equation, put the opening and closing $$ on
+    separate lines with the equation between them.
 
 FINAL ANSWER:
 """
