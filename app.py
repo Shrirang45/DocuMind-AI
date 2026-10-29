@@ -3,9 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import streamlit as st
 from src.data_ingestion import ingest_documents, EmbeddingsManager, VectorStore
-from src.rag import RAGRetriever, rag, llm, DOCUMIND_MODE
-
-IS_CLOUD_MODE = DOCUMIND_MODE == "cloud"
+from src.rag import RAGRetriever, rag, llm
 
 DATA_DIR = "./data/uploads"
 HISTORY_FILE = "./data/chat_history.json"
@@ -13,6 +11,79 @@ os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs("./data", exist_ok=True)
 
 st.set_page_config(page_title="DocuMind AI", page_icon="✦", layout="wide")
+
+
+def render_assistant_message(content):
+    """Render Markdown while repairing common unwrapped LaTeX equations."""
+    if not isinstance(content, str):
+        content = str(content)
+
+    # Normalize standard LaTeX math delimiters to Streamlit-supported delimiters.
+    content = content.replace(r"\[", "$$").replace(r"\]", "$$")
+    content = content.replace(r"\(", "$").replace(r"\)", "$")
+
+    lines = content.splitlines()
+    repaired = []
+    in_math_block = False
+    math_block_lines = []
+
+    def looks_like_bare_math(line):
+        """Identify equation/matrix lines that lack math delimiters."""
+        s = line.strip()
+        if not s or "$" in s or s.startswith(("```", "#", ">", "- ", "* ")):
+            return False
+
+        has_latex = any(token in s for token in (
+            r"\begin{", r"\end{", r"\frac", r"\sum", r"\int",
+            r"\quad", r"\alpha", r"\beta", r"\times", r"\cdot",
+            r"\sqrt", r"\left", r"\right", r"\mathbf", r"\mathrm",
+            r"\mathbb", r"\partial", r"\over", r"\lim", r"\prod",
+        ))
+        if not has_latex:
+            return False
+
+        # Avoid wrapping normal explanatory prose that merely mentions LaTeX.
+        starts_like_equation = bool(re.match(
+            r"^(?:[A-Za-z][A-Za-z0-9_{}^()\[\]]*\s*(?:=|\\approx|\\propto|\\in|\\to)|"
+            r"\\begin\{|\\end\{|[&\\]|[A-Za-z]\s*=)",
+            s,
+        ))
+        return starts_like_equation or r"\begin{" in s or r"\end{" in s
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Keep fenced code blocks untouched.
+        if stripped.startswith("```"):
+            if in_math_block:
+                repaired.extend(["$$", *math_block_lines, "$$"])
+                math_block_lines = []
+                in_math_block = False
+            repaired.append(line)
+            continue
+
+        if in_math_block:
+            math_block_lines.append(line)
+            if r"\end{" in stripped:
+                repaired.extend(["$$", *math_block_lines, "$$"])
+                math_block_lines = []
+                in_math_block = False
+            continue
+
+        if looks_like_bare_math(line):
+            if r"\begin{" in stripped and r"\end{" not in stripped:
+                in_math_block = True
+                math_block_lines = [line]
+            else:
+                repaired.extend(["$$", stripped, "$$"])
+        else:
+            repaired.append(line)
+
+    # If a model omitted \end{...}, still attempt to render the captured block.
+    if in_math_block:
+        repaired.extend(["$$", *math_block_lines, "$$"])
+
+    st.markdown("\n".join(repaired))
 
 # Dark, glass-panel theme
 st.markdown("""
@@ -285,7 +356,7 @@ with st.sidebar:
         '<div class="dm-logo"><span class="dm-logo-mark">✦</span>'
         '<div><div class="dm-logo-text">DocuMind</div>'
         '<div class="dm-logo-sub">AI Document Q&amp;A</div></div></div>'
-        f'<div style="margin-top:8px;"><span class="dm-pill">{'☁️ Cloud demo' if IS_CLOUD_MODE else '🔒 Offline &amp; Private'}</span></div>'
+        '<div style="margin-top:8px;"><span class="dm-pill">🔒 Offline &amp; Private</span></div>'
         '<hr class="dm-hr">',
         unsafe_allow_html=True,
     )
@@ -327,7 +398,7 @@ with top_l:
     st.markdown(
         '<div class="dm-logo"><span class="dm-logo-mark" style="font-size:2rem;">✦</span>'
         '<div><div class="dm-logo-text" style="font-size:1.5rem;">DocuMind AI</div>'
-        f'<div class="dm-logo-sub">{'Groq API demo' if IS_CLOUD_MODE else 'Local RAG assistant, zero cloud calls'}</div></div></div>',
+        '<div class="dm-logo-sub">Local RAG assistant, zero cloud calls</div></div></div>',
         unsafe_allow_html=True,
     )
 with top_r:
@@ -354,7 +425,7 @@ if st.session_state.page == "Chat":
         docs = get_documents()
         st.markdown(
             '<div class="dm-hero"><div class="mark">✦</div><h1>Ask anything about your files</h1>'
-            f'<p>{'This public demo sends your question and retrieved document excerpts to Groq for answer generation. Do not upload sensitive documents.' if IS_CLOUD_MODE else 'Everything runs locally — your documents never leave this machine.'}</p></div>',
+            '<p>Everything runs locally — your documents never leave this machine.</p></div>',
             unsafe_allow_html=True,
         )
         if not docs:
@@ -392,7 +463,10 @@ if st.session_state.page == "Chat":
 
         for m in current_chat["messages"]:
             with st.chat_message(m["role"]):
-                st.markdown(m["content"])
+                if m["role"] == "assistant":
+                    render_assistant_message(m["content"])
+                else:
+                    st.markdown(m["content"])
                 if m["role"] == "assistant" and m.get("sources"):
                     with st.expander(f"📚 {len(m['sources'])} source(s) used"):
                         st.markdown(chips_html(m["sources"]), unsafe_allow_html=True)
@@ -543,13 +617,13 @@ elif st.session_state.page == "Settings":
     st.write("")
     s1, s2 = st.columns(2)
     s1.markdown(
-        f'<div class="dm-glass"><b>🧠 LLM</b><br>{"Mistral API" if IS_CLOUD_MODE else "Mistral via Ollama"}<br><br>'
+        '<div class="dm-glass"><b>🧠 LLM</b><br>Mistral via Ollama<br><br>'
         '<b>🧬 Embedding model</b><br>all-MiniLM-L6-v2<br><br>'
         '<b>🗂️ Vector database</b><br>ChromaDB</div>', unsafe_allow_html=True)
     s2.markdown(
         '<div class="dm-glass"><b>🖥️ Frontend</b><br>Streamlit<br><br>'
-        f'<b>🌐 Operation mode</b><br>{"Cloud demo" if IS_CLOUD_MODE else "Local &amp; Offline"}<br><br>'
-        f'<b>🔒 Privacy</b><br>{"Questions and retrieved excerpts are sent to Mistral API" if IS_CLOUD_MODE else "No data leaves your machine"}</div>', unsafe_allow_html=True)
+        '<b>🌐 Operation mode</b><br>Online / Local &amp; Offline<br><br>'
+        '<b>🔒 Privacy</b><br>No data leaves your machine</div>', unsafe_allow_html=True)
 
     st.write("")
     st.markdown('<div class="dm-glass">', unsafe_allow_html=True)
