@@ -1,7 +1,6 @@
 from typing import List, Dict, Any
 import os
 
-from langchain_ollama import OllamaLLM, ChatOllama
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.tools import tool
@@ -135,12 +134,15 @@ def _get_groq_api_key():
 
 if DOCUMIND_MODE == "cloud":
     from langchain_groq import ChatGroq
+
     _api_key = _get_groq_api_key()
     if not _api_key:
         raise RuntimeError(
             "Cloud mode needs GROQ_API_KEY. Add it to Streamlit Cloud Secrets "
-            "or your environment. For offline use, leave DOCUMIND_MODE unset or set it to 'local'."
+            "or your environment. For offline use, leave DOCUMIND_MODE unset "
+            "or set it to 'local'."
         )
+
     llm = ChatGroq(
         model="openai/gpt-oss-120b",
         api_key=_api_key,
@@ -148,18 +150,23 @@ if DOCUMIND_MODE == "cloud":
         max_tokens=512,
     )
     agent_llm = llm
+
 else:
+    # Import Ollama only for local/offline mode. The cloud deployment
+    # uses Groq and does not need langchain_ollama installed.
+    from langchain_ollama import OllamaLLM, ChatOllama
+
     llm = OllamaLLM(
         model="mistral",
         temperature=0.2,
         num_predict=128,
-        num_ctx=1024
+        num_ctx=1024,
     )
     agent_llm = ChatOllama(
         model="mistral",
         temperature=0.1,
         num_predict=128,
-        num_ctx=1024
+        num_ctx=1024,
     )
 
 
@@ -321,20 +328,19 @@ STRICT RULES:
 12. If the evidence contains a relevant fact,
     answer directly using that fact.
 
-13. MATHEMATICAL FORMATTING:
-    - Use $...$ for inline mathematical expressions.
-    - Use $$...$$ for equations displayed on separate lines.
-    - Put matrices and multi-line equations inside $$...$$.
-    - Use valid LaTeX commands inside the math delimiters.
-    - Never show raw LaTeX commands as ordinary prose.
-    - Ensure each math delimiter is properly closed.
-    - Do not wrap equations in square brackets as delimiters.
-    - Explain equations in plain language before or after them.
+13. Format mathematical expressions using valid LaTeX:
+    use $...$ for inline math and $$...$$ for display equations.
 
-13. For example, format a linear equation like this:
-    $$z = Wx + b$$
-    For a display equation, put the opening and closing $$ on
-    separate lines with the equation between them.
+14. Put important multi-line equations on separate lines
+    using $$...$$ delimiters.
+
+15. For matrices, fractions, summations, and Greek symbols,
+    use valid LaTeX commands and ensure delimiters are balanced.
+
+16. Do not leave LaTeX commands such as \\begin{{bmatrix}},
+    \\quad, or \\frac displayed as unformatted plain text.
+    If the evidence contains equations, preserve their meaning
+    while formatting them clearly.
 
 FINAL ANSWER:
 """
