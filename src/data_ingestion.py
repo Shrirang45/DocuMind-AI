@@ -298,7 +298,10 @@ class VectorStore:
 # Failure-safe ingestion
 # ---------------------------------------------------------------------------
 
-def ingest_documents(pdf_directory: Optional[os.PathLike | str] = None) -> Tuple[VectorStore, EmbeddingsManager]:
+def ingest_documents(
+    pdf_directory: Optional[os.PathLike | str] = None,
+    persist_directory: Optional[os.PathLike | str] = None,
+) -> Tuple[VectorStore, EmbeddingsManager]:
     """Index new/changed PDFs without deleting the old version prematurely.
 
     Returns (vector_store, embedding_manager) for compatibility with the app.
@@ -310,7 +313,10 @@ def ingest_documents(pdf_directory: Optional[os.PathLike | str] = None) -> Tuple
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     with _INGEST_LOCK:
-        store = VectorStore()
+        # When persist_directory is supplied, the caller can isolate each
+        # visitor's ChromaDB data in a separate directory. Existing local
+        # callers retain the original shared default path.
+        store = VectorStore(persist_directory=persist_directory)
         embedder = EmbeddingsManager()
 
         # Top-level PDFs only, matching Streamlit upload-folder expectations.

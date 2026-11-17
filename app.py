@@ -1,15 +1,24 @@
-import os, uuid, hashlib
+import os, uuid, hashlib, re
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import streamlit as st
 from src.data_ingestion import ingest_documents, EmbeddingsManager, VectorStore
 from src.rag import RAGRetriever, rag, llm
 
-DATA_DIR = "./data/uploads"
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs("./data", exist_ok=True)
-
 st.set_page_config(page_title="DocuMind AI", page_icon="✦", layout="wide")
+
+# Each Streamlit browser session receives its own upload and Chroma directories.
+# A new visitor gets a new random ID and therefore an empty document library.
+if "documind_session_id" not in st.session_state:
+    st.session_state.documind_session_id = uuid.uuid4().hex
+
+SESSION_ROOT = Path(os.getenv("DOCUMIND_SESSION_ROOT", "/tmp/documind_sessions"))
+SESSION_DIR = SESSION_ROOT / st.session_state.documind_session_id
+DATA_DIR = str(SESSION_DIR / "uploads")
+VECTOR_DIR = str(SESSION_DIR / "vector_store")
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(VECTOR_DIR, exist_ok=True)
 
 
 def render_assistant_message(content):
@@ -221,13 +230,19 @@ def chips_html(sources):
 
 
 @st.cache_resource
-def get_backend():
-    return RAGRetriever(VectorStore(), EmbeddingsManager())
+def get_backend(session_id):
+    """Create a separate persistent vector store for each browser session."""
+    session_dir = SESSION_ROOT / session_id
+    vector_dir = session_dir / "vector_store"
+    return RAGRetriever(
+        VectorStore(persist_directory=vector_dir),
+        EmbeddingsManager(),
+    )
 
 
-def ask_question(query, top_k, score_threshold):
-    """Run the RAG chain."""
-    retriever = get_backend()
+def ask_question(query, top_k, score_threshold, session_id):
+    """Run RAG against only the current visitor's vector store."""
+    retriever = get_backend(session_id)
 
     return rag(
         query,
@@ -275,8 +290,9 @@ def submit_question(user_input, chat):
     top_k = int(st.session_state.top_k)
     score_threshold = float(st.session_state.score_threshold)
 
+    session_id = st.session_state.documind_session_id
     future = get_executor().submit(
-        ask_question, user_input, top_k, score_threshold
+        ask_question, user_input, top_k, score_threshold, session_id
     )
     st.session_state.pending_jobs[chat_id] = future
 
@@ -537,7 +553,7 @@ elif st.session_state.page == "Documents":
                     output_file.write(f.getvalue())
             with st.spinner("Extracting, chunking and creating embeddings..."):
                 try:
-                    ingest_documents(DATA_DIR)
+                    ingest_documents(DATA_DIR, persist_directory=VECTOR_DIR)
                     get_backend.clear()
                     st.session_state.upload_status = f"✅ {len(new_files)} document(s) uploaded and processed successfully."
                     st.session_state.upload_reset = st.session_state.get("upload_reset", 0) + 1
@@ -582,7 +598,7 @@ elif st.session_state.page == "Documents":
 
                     # Rebuild/update the knowledge base from remaining PDFs.
                     with st.spinner("Updating knowledge base..."):
-                        ingest_documents(DATA_DIR)
+                        ingest_documents(DATA_DIR, persist_directory=VECTOR_DIR)
 
                     get_backend.clear()
 
