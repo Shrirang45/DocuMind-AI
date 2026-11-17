@@ -1,4 +1,4 @@
-import os, json, uuid, hashlib
+import os, uuid, hashlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import streamlit as st
@@ -6,7 +6,6 @@ from src.data_ingestion import ingest_documents, EmbeddingsManager, VectorStore
 from src.rag import RAGRetriever, rag, llm
 
 DATA_DIR = "./data/uploads"
-HISTORY_FILE = "./data/chat_history.json"
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs("./data", exist_ok=True)
 
@@ -14,35 +13,74 @@ st.set_page_config(page_title="DocuMind AI", page_icon="✦", layout="wide")
 
 
 def render_assistant_message(content):
-    """Render assistant Markdown and normalize common LaTeX delimiters."""
+    """Render Markdown while repairing common unwrapped LaTeX equations."""
     if not isinstance(content, str):
         content = str(content)
 
-    # Convert standard LaTeX delimiters into delimiters supported by
-    # Streamlit's Markdown renderer.
+    # Normalize standard LaTeX math delimiters to Streamlit-supported delimiters.
     content = content.replace(r"\[", "$$").replace(r"\]", "$$")
     content = content.replace(r"\(", "$").replace(r"\)", "$")
 
-    # Some models wrap display equations in square brackets instead of
-    # LaTeX display delimiters. Repair only lines that clearly contain LaTeX.
     lines = content.splitlines()
     repaired = []
+    in_math_block = False
+    math_block_lines = []
+
+    def looks_like_bare_math(line):
+        """Identify equation/matrix lines that lack math delimiters."""
+        s = line.strip()
+        if not s or "$" in s or s.startswith(("```", "#", ">", "- ", "* ")):
+            return False
+
+        has_latex = any(token in s for token in (
+            r"\begin{", r"\end{", r"\frac", r"\sum", r"\int",
+            r"\quad", r"\alpha", r"\beta", r"\times", r"\cdot",
+            r"\sqrt", r"\left", r"\right", r"\mathbf", r"\mathrm",
+            r"\mathbb", r"\partial", r"\over", r"\lim", r"\prod",
+        ))
+        if not has_latex:
+            return False
+
+        # Avoid wrapping normal explanatory prose that merely mentions LaTeX.
+        starts_like_equation = bool(re.match(
+            r"^(?:[A-Za-z][A-Za-z0-9_{}^()\[\]]*\s*(?:=|\\approx|\\propto|\\in|\\to)|"
+            r"\\begin\{|\\end\{|[&\\]|[A-Za-z]\s*=)",
+            s,
+        ))
+        return starts_like_equation or r"\begin{" in s or r"\end{" in s
+
     for line in lines:
         stripped = line.strip()
-        is_latex_equation = (
-            stripped.startswith("[")
-            and stripped.endswith("]")
-            and any(token in stripped for token in (
-                r"\begin{", r"\frac", r"\sum", r"\int",
-                r"\quad", r"\alpha", r"\beta", r"\times",
-                r"\cdot", r"\sqrt", r"\left", r"\right",
-            ))
-        )
-        if is_latex_equation and "$$" not in stripped:
-            equation = stripped[1:-1].strip()
-            repaired.extend(["$$", equation, "$$"])
+
+        # Keep fenced code blocks untouched.
+        if stripped.startswith("```"):
+            if in_math_block:
+                repaired.extend(["$$", *math_block_lines, "$$"])
+                math_block_lines = []
+                in_math_block = False
+            repaired.append(line)
+            continue
+
+        if in_math_block:
+            math_block_lines.append(line)
+            if r"\end{" in stripped:
+                repaired.extend(["$$", *math_block_lines, "$$"])
+                math_block_lines = []
+                in_math_block = False
+            continue
+
+        if looks_like_bare_math(line):
+            if r"\begin{" in stripped and r"\end{" not in stripped:
+                in_math_block = True
+                math_block_lines = [line]
+            else:
+                repaired.extend(["$$", stripped, "$$"])
         else:
             repaired.append(line)
+
+    # If a model omitted \end{...}, still attempt to render the captured block.
+    if in_math_block:
+        repaired.extend(["$$", *math_block_lines, "$$"])
 
     st.markdown("\n".join(repaired))
 
@@ -109,17 +147,18 @@ hr.dm-hr { border:none; border-top:1px solid var(--border); margin:12px 0; }
 # Data helpers
 # ============================================================
 def load_history():
-    if not os.path.exists(HISTORY_FILE):
-        return []
-    try:
-        data = json.load(open(HISTORY_FILE, encoding="utf-8"))
-        return data if isinstance(data, list) else []
-    except Exception:
-        return []
+    """Start with an empty history for each new Streamlit browser session.
+
+    Chat history is intentionally kept only in st.session_state. It is not
+    written to a shared server-side JSON file, so visitors cannot see one
+    another's conversations.
+    """
+    return []
 
 
 def save_history():
-    json.dump(st.session_state.chats, open(HISTORY_FILE, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
+    """No disk persistence: st.session_state retains chats for this session."""
+    return None
 
 
 def create_chat():
