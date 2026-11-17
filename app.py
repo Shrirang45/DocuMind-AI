@@ -1,4 +1,4 @@
-import os, uuid, hashlib, re
+import os, uuid, hashlib, re, json
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -8,15 +8,24 @@ from src.rag import RAGRetriever, rag, llm
 
 st.set_page_config(page_title="DocuMind AI", page_icon="✦", layout="wide")
 
-# Each Streamlit browser session receives its own upload and Chroma directories.
-# A new visitor gets a new random ID and therefore an empty document library.
+# A random opaque token in the URL identifies this visitor's workspace.
+# Streamlit session_state is reset on a browser refresh, but query parameters
+# survive refreshes, allowing us to restore the same isolated workspace.
+# Treat the full URL as private: anyone with the tokenized URL can access that
+# workspace, so do not share it with other people.
 if "documind_session_id" not in st.session_state:
-    st.session_state.documind_session_id = uuid.uuid4().hex
+    session_token = st.query_params.get("dm_session", "")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{40,60}", session_token):
+        session_token = __import__("secrets").token_urlsafe(32)
+        st.query_params["dm_session"] = session_token
+    st.session_state.documind_session_id = session_token
 
 SESSION_ROOT = Path(os.getenv("DOCUMIND_SESSION_ROOT", "/tmp/documind_sessions"))
 SESSION_DIR = SESSION_ROOT / st.session_state.documind_session_id
 DATA_DIR = str(SESSION_DIR / "uploads")
 VECTOR_DIR = str(SESSION_DIR / "vector_store")
+HISTORY_FILE = SESSION_DIR / "chat_history.json"
+SESSION_DIR.mkdir(parents=True, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(VECTOR_DIR, exist_ok=True)
 
@@ -156,18 +165,27 @@ hr.dm-hr { border:none; border-top:1px solid var(--border); margin:12px 0; }
 # Data helpers
 # ============================================================
 def load_history():
-    """Start with an empty history for each new Streamlit browser session.
-
-    Chat history is intentionally kept only in st.session_state. It is not
-    written to a shared server-side JSON file, so visitors cannot see one
-    another's conversations.
-    """
+    """Restore this visitor's chats from their isolated workspace."""
+    try:
+        if HISTORY_FILE.is_file():
+            with HISTORY_FILE.open("r", encoding="utf-8") as file_obj:
+                data = json.load(file_obj)
+            if isinstance(data, list):
+                return data
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"Could not restore session chat history: {exc}")
     return []
 
 
 def save_history():
-    """No disk persistence: st.session_state retains chats for this session."""
-    return None
+    """Persist chats only inside this visitor's session directory."""
+    temp_file = HISTORY_FILE.with_suffix(".json.tmp")
+    try:
+        with temp_file.open("w", encoding="utf-8") as file_obj:
+            json.dump(st.session_state.chats, file_obj, indent=2, ensure_ascii=False)
+        temp_file.replace(HISTORY_FILE)
+    except OSError as exc:
+        print(f"Could not save session chat history: {exc}")
 
 
 def create_chat():
